@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Polícia Militar Pixelado</title>
+  <style>
+    :root {
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #0e1620;
+      color: #ddd;
+    }
+    #game {
+      border: 6px solid #111;
+      background: #0b2333;
+      display: block;
+    }
+    .hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .controls {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    button {
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="720" height="480"></canvas>
+  <div class="hud">
+    Pontuação: <span id="score">0</span> &nbsp; Vidas:
+    <span id="lives">3</span>
+  </div>
+  <div class="controls">
+    Controles: ← → mover · Clique esquerdo atirar · P pausar
+    <button id="restart">Reiniciar</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const livesEl = document.getElementById("lives");
+    const restartBtn = document.getElementById("restart");
+
+    // ===== IMAGENS COM LINKS DIRETOS =====
+    const imgPolicial = new Image();
+    imgPolicial.src =
+      "https://media.istockphoto.com/vectors/vector-pixel-art-cartoon-vector-id854025628?k=6&m=854025628&s=612x612&w=0&h=E3PlCOd1SWmZoHOLa3lhdaqspjbeoJTeo7LXjXC1wQg=";
+
+    const imgBandido = new Image();
+    imgBandido.src =
+      "https://cdn.vectorstock.com/i/preview-1x/98/30/bandit-character-robbing-bank-vector-46349830.jpg";
+
+    const imgFundo = new Image();
+    imgFundo.src =
+      "https://img.freepik.com/fotos-premium/fundo-camuflado-que-e-verde-e-tem-um-padrao-de-camuflagem-que-e-camuflado_878402-2690.jpg";
+
+    const imgTiro = new Image();
+    imgTiro.src =
+      "https://img.freepik.com/vector-premium/pixel-art-bullet-pixelated-bullet-bullet-pistola-iconos-arma-fondo-pixelado-juego_1038602-220.jpg";
+    // ====================================
+
+    const state = {
+      width: canvas.width,
+      height: canvas.height,
+      keys: {},
+      bullets: [],
+      enemies: [],
+      spawnTimer: 0,
+      spawnInterval: 90,
+      score: 0,
+      lives: 3,
+      running: true,
+      gameOver: false,
+      difficultyTimer: 0,
+    };
+
+    const player = {
+      x: state.width / 2 - 20,
+      y: state.height - 60,
+      w: 40,
+      h: 48,
+      speed: 4,
+    };
+
+    function rectsCollide(a, b) {
+      return !(
+        a.x + a.w < b.x ||
+        a.x > b.x + b.w ||
+        a.y + a.h < b.y ||
+        a.y > b.y + b.h
+      );
+    }
+
+    window.addEventListener("keydown", (e) => {
+      state.keys[e.code] = true;
+      if (e.code === "KeyP") togglePause();
+    });
+    window.addEventListener("keyup", (e) => {
+      state.keys[e.code] = false;
+    });
+
+    restartBtn.addEventListener("click", () => {
+      resetGame();
+    });
+
+    function fire() {
+      if (!state.running || state.gameOver) return;
+      const b = {
+        x: player.x + player.w / 2 - 4,
+        y: player.y - 8,
+        w: 8,
+        h: 12,
+        speed: 7,
+      };
+      state.bullets.push(b);
+    }
+
+    // Remove o listener para tecla espaço (desativado)
+    // window.addEventListener('keydown', e=>{ if(e.code==='Space'){ e.preventDefault(); fire(); } });
+
+    // Adiciona listener para clique do mouse (botão esquerdo) atirar
+    canvas.addEventListener("mousedown", (e) => {
+      if (e.button === 0) {
+        fire();
+      }
+    });
+
+    function spawnEnemy() {
+      const w = 36;
+      const h = 44;
+      const x = Math.random() * (state.width - w - 20) + 10;
+      const speed = 1.2 + Math.random() * 1.2 + state.difficultyTimer * 0.02;
+      const enemy = { x, y: -h, w, h, speed };
+      state.enemies.push(enemy);
+    }
+
+    function update() {
+      if (!state.running || state.gameOver) return;
+
+      if (state.keys["ArrowLeft"] || state.keys["KeyA"]) player.x -= player.speed;
+      if (state.keys["ArrowRight"] || state.keys["KeyD"])
+        player.x += player.speed;
+      player.x = Math.max(0, Math.min(state.width - player.w, player.x));
+
+      for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const b = state.bullets[i];
+        b.y -= b.speed;
+        if (b.y + b.h < 0) state.bullets.splice(i, 1);
+      }
+
+      for (let i = state.enemies.length - 1; i >= 0; i--) {
+        const e = state.enemies[i];
+        e.y += e.speed;
+        if (rectsCollide(e, player)) {
+          state.enemies.splice(i, 1);
+          loseLife();
+          continue;
+        }
+        if (e.y > state.height) {
+          state.enemies.splice(i, 1);
+          loseLife();
+          continue;
+        }
+      }
+
+      for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const b = state.bullets[i];
+        for (let j = state.enemies.length - 1; j >= 0; j--) {
+          const e = state.enemies[j];
+          if (rectsCollide(b, e)) {
+            state.bullets.splice(i, 1);
+            state.enemies.splice(j, 1);
+            state.score += 10;
+            state.difficultyTimer += 0.5;
+            break;
+          }
+        }
+      }
+
+      state.spawnTimer++;
+      if (
+        state.spawnTimer >=
+        Math.max(20, state.spawnInterval - Math.floor(state.difficultyTimer))
+      ) {
+        spawnEnemy();
+        state.spawnTimer = 0;
+      }
+
+      scoreEl.textContent = state.score;
+      livesEl.textContent = state.lives;
+
+      if (state.lives <= 0) {
+        state.gameOver = true;
+        state.running = false;
+      }
+    }
+
+    function loseLife() {
+      state.lives -= 1;
+      state.enemies = [];
+      state.bullets = [];
+      player.x = state.width / 2 - player.w / 2;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, state.width, state.height);
+
+      // Fundo (imagem se carregada)
+      if (imgFundo.complete && imgFundo.naturalWidth > 0) {
+        ctx.drawImage(imgFundo, 0, 0, state.width, state.height);
+      } else {
+        ctx.fillStyle = "#07151a";
+        ctx.fillRect(0, 0, state.width, state.height);
+      }
+
+      // Jogador
+      if (imgPolicial.complete && imgPolicial.naturalWidth > 0) {
+        ctx.drawImage(imgPolicial, player.x, player.y, player.w, player.h);
+      } else {
+        ctx.fillStyle = "#2f86d5";
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+      }
+
+      // Balas (tiros)
+      state.bullets.forEach((b) => {
+        if (imgTiro.complete && imgTiro.naturalWidth > 0) {
+          ctx.drawImage(imgTiro, b.x, b.y, b.w, b.h);
+        } else {
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+        }
+      });
+
+      // Inimigos
+      state.enemies.forEach((e) => {
+        if (imgBandido.complete && imgBandido.naturalWidth > 0) {
+          ctx.drawImage(imgBandido, e.x, e.y, e.w, e.h);
+        } else {
+          ctx.fillStyle = "#d14b4b";
+          ctx.fillRect(e.x, e.y, e.w, e.h);
+        }
+      });
+
+      if (!state.running && !state.gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, state.width, state.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "22px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "PAUSADO - pressione P para continuar",
+          state.width / 2,
+          state.height / 2
+        );
+      }
+
+      if (state.gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(0, 0, state.width, state.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "28px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", state.width / 2, state.height / 2 - 20);
+        ctx.font = "18px sans-serif";
+        ctx.fillText(
+          "Pontuação final: " + state.score,
+          state.width / 2,
+          state.height / 2 + 10
+        );
+        ctx.fillText(
+          "Clique em Reiniciar para jogar de novo",
+          state.width / 2,
+          state.height / 2 + 40
+        );
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function togglePause() {
+      if (state.gameOver) return;
+      state.running = !state.running;
+    }
+
+    function resetGame() {
+      state.bullets = [];
+      state.enemies = [];
+      state.spawnTimer = 0;
+      state.spawnInterval = 90;
+      state.score = 0;
+      state.lives = 3;
+      state.running = true;
+      state.gameOver = false;
+      state.difficultyTimer = 0;
+      player.x = state.width / 2 - player.w / 2;
+    }
+
+    resetGame();
+    loop();
+  </script>
+</body>
+</html>
+.html
